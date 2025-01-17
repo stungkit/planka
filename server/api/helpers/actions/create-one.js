@@ -14,7 +14,10 @@ const valuesValidator = (value) => {
   return true;
 };
 
-const buildAndSendMessage = async (card, action, actorUser, send) => {
+const truncateString = (string, maxLength = 30) =>
+  string.length > maxLength ? `${string.substring(0, 30)}...` : string;
+
+const buildAndSendMarkdownMessage = async (card, action, actorUser, send) => {
   const cardLink = `<${sails.config.custom.baseUrl}/cards/${card.id}|${card.name}>`;
 
   let markdown;
@@ -28,6 +31,7 @@ const buildAndSendMessage = async (card, action, actorUser, send) => {
 
       break;
     case Action.Types.COMMENT_CARD:
+      // TODO: truncate text?
       markdown = `*${actorUser.name}* commented on ${cardLink}:\n>${action.data.text}`;
 
       break;
@@ -36,6 +40,31 @@ const buildAndSendMessage = async (card, action, actorUser, send) => {
   }
 
   await send(markdown);
+};
+
+const buildAndSendHtmlMessage = async (card, action, actorUser, send) => {
+  const cardLink = `<a href="${sails.config.custom.baseUrl}/cards/${card.id}">${card.name}</a>`;
+
+  let html;
+  switch (action.type) {
+    case Action.Types.CREATE_CARD:
+      html = `${cardLink} was created by ${actorUser.name} in <b>${action.data.list.name}</b>`;
+
+      break;
+    case Action.Types.MOVE_CARD:
+      html = `${cardLink} was moved by ${actorUser.name} to <b>${action.data.toList.name}</b>`;
+
+      break;
+    case Action.Types.COMMENT_CARD: {
+      html = `<b>${actorUser.name}</b> commented on ${cardLink}:\n<i>${truncateString(action.data.text)}</i>`;
+
+      break;
+    }
+    default:
+      return;
+  }
+
+  await send(html);
 };
 
 module.exports = {
@@ -116,17 +145,32 @@ module.exports = {
     );
 
     if (sails.config.custom.slackBotToken) {
-      buildAndSendMessage(values.card, action, values.user, sails.helpers.utils.sendSlackMessage);
+      buildAndSendMarkdownMessage(
+        values.card,
+        action,
+        values.user,
+        sails.helpers.utils.sendSlackMessage,
+      );
     }
 
     if (sails.config.custom.googleChatWebhookUrl) {
-      buildAndSendMessage(
+      buildAndSendMarkdownMessage(
         values.card,
         action,
         values.user,
         sails.helpers.utils.sendGoogleChatMessage,
       );
     }
+
+    if (sails.config.custom.telegramBotToken) {
+      buildAndSendHtmlMessage(
+        values.card,
+        action,
+        values.user,
+        sails.helpers.utils.sendTelegramMessage,
+      );
+    }
+
     return action;
   },
 };
